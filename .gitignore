@@ -1,0 +1,9 @@
+# Ignore WebAssembly files
+qart/main.wasm
+
+# Ignore wasm_exec.js if not part of source control
+qart/wasm_exec.js
+
+# Ignore Python server artifacts
+__pycache__/
+
