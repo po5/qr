@@ -4,11 +4,6 @@
 
 //go:build wasm
 
-// Qart is a WebAssembly program to help create artistic QR code images.
-// The algorithms are described at https://research.swtch.com/qart,
-// and this program is running at https://research.swtch.com/qr/draw/.
-//
-// To run the program locally, use “go run local.go”.
 package main
 
 import (
@@ -22,6 +17,8 @@ import (
 	_ "image/jpeg"
 	"strings"
 	"syscall/js"
+
+	"rsc.io/qr" // QR code library for generating codes
 )
 
 //go:embed pjw.png
@@ -36,7 +33,8 @@ var (
 	checkDither  js.Value
 	checkControl js.Value
 
-	inputURL js.Value // url box
+	inputURL js.Value // URL input box
+	inputECL js.Value // ECL dropdown
 )
 
 var pic = &Image{
@@ -48,6 +46,7 @@ var pic = &Image{
 	Mask:    2,
 }
 
+// Directional movement functions
 func up()       { pic.Dy++ }
 func down()     { pic.Dy-- }
 func left()     { pic.Dx++ }
@@ -76,18 +75,47 @@ func setErr(err error) {
 	doc.Call("getElementById", "err-output").Set("innerHTML", html.EscapeString(err.Error()))
 }
 
+// Generate QR code with selected Error Correction Level (ECL)
+func generateQRCode() {
+	text := inputURL.Get("value").String()   // Get input text (URL)
+	ecl := inputECL.Get("value").String()   // Get selected ECL
+
+	// Map the ECL string to the qr.Level
+	var level qr.Level
+	switch ecl {
+	case "L":
+		level = qr.L
+	case "M":
+		level = qr.M
+	case "Q":
+		level = qr.Q
+	case "H":
+		level = qr.H
+	default:
+		level = qr.L // Default to Low
+	}
+
+	// Generate the QR code
+	code, err := qr.Encode(text, level)
+	if err != nil {
+		setErr(err)
+		return
+	}
+
+	// Convert the QR code to an image and display it
+	img := code.PNG()
+	setImage("img-output", img)
+	doc.Call("getElementById", "img-download").Set("href", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(img))
+}
+
+// Update QR code and UI
 func update() {
 	pic.Rand = checkRand.Get("checked").Bool()
 	pic.OnlyDataBits = checkData.Get("checked").Bool()
 	pic.Dither = checkDither.Get("checked").Bool()
 	pic.SaveControl = checkControl.Get("checked").Bool()
 	pic.URL = inputURL.Get("value").String()
-	img, err := pic.Encode()
-	setImage("img-output", img)
-	doc.Call("getElementById", "img-download").Set("href", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(img))
-	if err != nil {
-		setErr(err)
-	}
+	generateQRCode()
 }
 
 func funcOf(f func()) js.Func {
@@ -104,6 +132,7 @@ func main() {
 	checkDither = doc.Call("getElementById", "dither")
 	checkControl = doc.Call("getElementById", "control")
 	inputURL = doc.Call("getElementById", "url")
+	inputECL = doc.Call("getElementById", "ecl") // Link to ECL dropdown
 
 	setImage("arrow-right", Arrow(48, 0))
 	setImage("arrow-up", Arrow(48, 1))
@@ -146,6 +175,7 @@ func main() {
 		doc.Call("getElementById", id).Set("onclick", updateJS)
 	}
 	inputURL.Call("addEventListener", "change", updateJS)
+	inputECL.Call("addEventListener", "change", updateJS) // Listen for ECL changes
 
 	fmt.Println("hello")
 	doc.Call("getElementById", "upload-input").Call("addEventListener", "change",
