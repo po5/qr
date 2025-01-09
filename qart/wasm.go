@@ -115,7 +115,14 @@ func update() {
 	pic.Dither = checkDither.Get("checked").Bool()
 	pic.SaveControl = checkControl.Get("checked").Bool()
 	pic.URL = inputURL.Get("value").String()
-	generateQRCode()
+
+	// Restore original image generation logic
+	img, err := pic.Encode()
+	setImage("img-output", img)
+	doc.Call("getElementById", "img-download").Set("href", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(img))
+	if err != nil {
+		setErr(err)
+	}
 }
 
 func funcOf(f func()) js.Func {
@@ -175,7 +182,7 @@ func main() {
 		doc.Call("getElementById", id).Set("onclick", updateJS)
 	}
 	inputURL.Call("addEventListener", "change", updateJS)
-	inputECL.Call("addEventListener", "change", updateJS) // Listen for ECL changes
+	inputECL.Call("addEventListener", "change", funcOf(generateQRCode)) // Attach ECL change listener
 
 	fmt.Println("hello")
 	doc.Call("getElementById", "upload-input").Call("addEventListener", "change",
