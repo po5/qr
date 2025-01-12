@@ -30,7 +30,7 @@ type Image struct {
 	Target   [][]int
 	Dx       int
 	Dy       int
-	URL      string
+    URL      string
 	Version  int
 	Mask     int
 	Scale    int
@@ -53,6 +53,9 @@ type Image struct {
 
 	// Code is the final QR code.
 	Code *qr.Code
+
+    // Adding ECL to this project
+    ECL qr.Level
 }
 
 func (m *Image) SetFile(data []byte) {
@@ -184,6 +187,20 @@ func (m *Image) rotate(p *coding.Plan, rot int) {
 
 func (m *Image) Encode() ([]byte, error) {
 	m.Clamp()
+
+    // Convert from rsc.io/qr.Level to coding.Level
+    var cLevel coding.Level
+    switch m.ECL {
+    case qr.L:
+        cLevel = coding.L
+    case qr.M:
+        cLevel = coding.M
+    case qr.Q:
+        cLevel = coding.Q
+    case qr.H:
+        cLevel = coding.H
+    }
+
 	dt := 17 + 4*m.Version + m.Size
 	if len(m.Target) != dt {
 		t, err := makeTarg(m.File, dt)
@@ -192,7 +209,7 @@ func (m *Image) Encode() ([]byte, error) {
 		}
 		m.Target = t
 	}
-	p, err := coding.NewPlan(coding.Version(m.Version), coding.L, coding.Mask(m.Mask))
+	p, err := coding.NewPlan(coding.Version(m.Version), cLevel, coding.Mask(m.Mask))
 	if err != nil {
 		return nil, err
 	}

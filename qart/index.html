@@ -21,25 +21,8 @@ var mod = fetchAndInstantiate("main.wasm", go.importObject);
 window.onload = function() {
   mod.then(function(instance) {
     go.run(instance);
-    document.getElementById("redraw").onclick = generateQR; // Attach QR generation to button
   });
 };
-
-async function generateQR() {
-    const url = document.getElementById('url').value; // Get input text (URL)
-    const ecl = document.getElementById('ecl').value; // Get selected Error Correction Level (ECL)
-
-    try {
-        // Call WebAssembly function generateQRCode (assumed to exist in main.wasm)
-        const result = await generateQRCode(url, ecl);
-        const outputImage = document.getElementById('img-output');
-        outputImage.src = result; // Set generated QR code image
-        document.getElementById("img-download").href = result; // Update download link
-    } catch (err) {
-        console.error("Error generating QR code:", err);
-        document.getElementById('err-output').innerText = `Error: ${err.message}`;
-    }
-}
   </script>
   <style>
   .article {

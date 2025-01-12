@@ -10,7 +10,6 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/base64"
-	"fmt"
 	"html"
 	"image"
 	_ "image/gif"
@@ -54,13 +53,11 @@ func right()    { pic.Dx-- }
 func ibigger()  { pic.Size++ }
 func ismaller() { pic.Size-- }
 func rotate()   { pic.Rotation = (pic.Rotation + 1) & 3 }
-
 func bigger() {
 	if pic.Version < 8 {
 		pic.Version++
 	}
 }
-
 func smaller() {
 	if pic.Version > 1 {
 		pic.Version--
@@ -75,54 +72,44 @@ func setErr(err error) {
 	doc.Call("getElementById", "err-output").Set("innerHTML", html.EscapeString(err.Error()))
 }
 
-// Generate QR code with selected Error Correction Level (ECL)
-func generateQRCode() {
-	text := inputURL.Get("value").String()   // Get input text (URL)
-	ecl := inputECL.Get("value").String()   // Get selected ECL
-
-	// Map the ECL string to the qr.Level
-	var level qr.Level
-	switch ecl {
-	case "L":
-		level = qr.L
-	case "M":
-		level = qr.M
-	case "Q":
-		level = qr.Q
-	case "H":
-		level = qr.H
-	default:
-		level = qr.L // Default to Low
-	}
-
-	// Generate the QR code
-	code, err := qr.Encode(text, level)
-	if err != nil {
-		setErr(err)
-		return
-	}
-
-	// Convert the QR code to an image and display it
-	img := code.PNG()
-	setImage("img-output", img)
-	doc.Call("getElementById", "img-download").Set("href", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(img))
-}
-
 // Update QR code and UI
 func update() {
-	pic.Rand = checkRand.Get("checked").Bool()
-	pic.OnlyDataBits = checkData.Get("checked").Bool()
-	pic.Dither = checkDither.Get("checked").Bool()
-	pic.SaveControl = checkControl.Get("checked").Bool()
-	pic.URL = inputURL.Get("value").String()
+    // 1. Read text and ECL from DOM
+    text := inputURL.Get("value").String()
+    eclStr := inputECL.Get("value").String()
 
-	// Restore original image generation logic
-	img, err := pic.Encode()
-	setImage("img-output", img)
-	doc.Call("getElementById", "img-download").Set("href", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(img))
-	if err != nil {
-		setErr(err)
-	}
+    var level qr.Level
+    switch eclStr {
+    case "M":
+        level = qr.M
+    case "Q":
+        level = qr.Q
+    case "H":
+        level = qr.H
+    default:
+        // If none match, default to L
+        level = qr.L
+    }
+
+    // 2. Store these in pic
+    pic.ECL = level
+    pic.URL = text
+    pic.Rand = checkRand.Get("checked").Bool()
+    pic.OnlyDataBits = checkData.Get("checked").Bool()
+    pic.Dither = checkDither.Get("checked").Bool()
+    pic.SaveControl = checkControl.Get("checked").Bool()
+
+    // 3. Actually generate the QArt code
+    pngBytes, err := pic.Encode()
+    if err != nil {
+        setErr(err)
+        return
+    }
+
+    // 4. Display the result in the browser
+    setImage("img-output", pngBytes)
+    doc.Call("getElementById", "img-download").Set("href",
+        "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes))
 }
 
 func funcOf(f func()) js.Func {
@@ -133,98 +120,131 @@ func funcOf(f func()) js.Func {
 }
 
 func main() {
-	doc = js.Global().Get("document")
-	checkRand = doc.Call("getElementById", "rand")
-	checkData = doc.Call("getElementById", "data")
-	checkDither = doc.Call("getElementById", "dither")
-	checkControl = doc.Call("getElementById", "control")
-	inputURL = doc.Call("getElementById", "url")
-	inputECL = doc.Call("getElementById", "ecl") // Link to ECL dropdown
+    doc = js.Global().Get("document")
 
-	setImage("arrow-right", Arrow(48, 0))
-	setImage("arrow-up", Arrow(48, 1))
-	setImage("arrow-left", Arrow(48, 2))
-	setImage("arrow-down", Arrow(48, 3))
+    checkRand = doc.Call("getElementById", "rand")
+    checkData = doc.Call("getElementById", "data")
+    checkDither = doc.Call("getElementById", "dither")
+    checkControl = doc.Call("getElementById", "control")
 
-	setImage("arrow-smaller", Arrow(20, 2))
-	setImage("arrow-bigger", Arrow(20, 0))
+    inputURL = doc.Call("getElementById", "url")
+    inputECL = doc.Call("getElementById", "ecl")
 
-	setImage("arrow-ismaller", Arrow(20, 2))
-	setImage("arrow-ibigger", Arrow(20, 0))
+    setImage("arrow-right", Arrow(48, 0))
+    setImage("arrow-up", Arrow(48, 1))
+    setImage("arrow-left", Arrow(48, 2))
+    setImage("arrow-down", Arrow(48, 3))
 
-	update()
+    setImage("arrow-smaller", Arrow(20, 2))
+    setImage("arrow-bigger", Arrow(20, 0))
 
-	doc.Call("getElementById", "loading").Get("style").Set("display", "none")
-	doc.Call("getElementById", "wasm1").Get("style").Set("display", "block")
-	doc.Call("getElementById", "wasm2").Get("style").Set("display", "block")
+    setImage("arrow-ismaller", Arrow(20, 2))
+    setImage("arrow-ibigger", Arrow(20, 0))
 
-	if img, err := pic.Src(); err == nil {
-		setImage("img-src", img)
-	} else {
-		setErr(err)
-	}
+    doc.Call("getElementById", "loading").Get("style").Set("display", "none")
+    doc.Call("getElementById", "wasm1").Get("style").Set("display", "block")
+    doc.Call("getElementById", "wasm2").Get("style").Set("display", "block")
 
-	do := func(id string, f func()) {
-		doc.Call("getElementById", id).Set("onclick", funcOf(func() { f(); update() }))
-	}
-	do("left", left)
-	do("right", right)
-	do("up", up)
-	do("down", down)
-	do("smaller", smaller)
-	do("bigger", bigger)
-	do("ismaller", ismaller)
-	do("ibigger", ibigger)
-	do("rotate", rotate)
+    if img, err := pic.Src(); err == nil {
+        setImage("img-src", img)
+    } else {
+        setErr(err)
+    }
 
-	updateJS := funcOf(update)
-	for _, id := range []string{"rand", "data", "dither", "control", "redraw"} {
-		doc.Call("getElementById", id).Set("onclick", updateJS)
-	}
-	inputURL.Call("addEventListener", "change", updateJS)
-	inputECL.Call("addEventListener", "change", funcOf(generateQRCode)) // Attach ECL change listener
+    doc.Call("getElementById", "left").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        left()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "right").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        right()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "up").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        up()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "down").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        down()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "smaller").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        smaller()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "bigger").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        bigger()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "ibigger").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        ibigger()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "ismaller").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        ismaller()
+        update()
+        return nil
+    }))
+    doc.Call("getElementById", "rotate").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        rotate()
+        update()
+        return nil
+    }))
 
-	fmt.Println("hello")
-	doc.Call("getElementById", "upload-input").Call("addEventListener", "change",
-		js.FuncOf(func(this js.Value, args []js.Value) any {
-			fmt.Println("newfile")
-			files := this.Get("files")
-			if files.Get("length").Int() != 1 {
-				return nil
-			}
-			r := js.Global().Get("FileReader").New()
-			var cb js.Func
-			cb = js.FuncOf(func(this js.Value, args []js.Value) any {
-				_, enc, _ := strings.Cut(r.Get("result").String(), ";base64,")
-				fmt.Printf("%q\n", enc)
-				data, err := base64.StdEncoding.DecodeString(enc)
-				defer cb.Release()
-				if err != nil {
-					setErr(err)
-					return nil
-				}
-				fmt.Println(len(data))
-				fmt.Printf("%q\n", data[:20])
+    doc.Call("getElementById", "redraw").Set("onclick", js.FuncOf(func(this js.Value, args []js.Value) any {
+        update()
+        return nil
+    }))
+    inputECL.Call("addEventListener", "change", js.FuncOf(func(this js.Value, args []js.Value) any {
+        update()
+        return nil
+    }))
 
-				_, _, err = image.Decode(bytes.NewReader(data))
-				if err != nil {
-					setErr(err)
-					return nil
-				}
-				pic.SetFile(data)
-				img, err := pic.Src()
-				if err != nil {
-					setErr(err)
-					return nil
-				}
-				setImage("img-src", img)
-				update()
-				return nil
-			})
-			r.Call("addEventListener", "load", cb)
-			r.Call("readAsDataURL", files.Index(0))
-			return nil
-		}))
+    // File upload callback (unchanged)
+    doc.Call("getElementById", "upload-input").Call("addEventListener", "change",
+        js.FuncOf(func(this js.Value, args []js.Value) any {
+            files := this.Get("files")
+            if files.Get("length").Int() != 1 {
+                return nil
+            }
+            r := js.Global().Get("FileReader").New()
+            var cb js.Func
+            cb = js.FuncOf(func(this js.Value, args []js.Value) any {
+                _, enc, _ := strings.Cut(r.Get("result").String(), ";base64,")
+                data, err := base64.StdEncoding.DecodeString(enc)
+                defer cb.Release()
+                if err != nil {
+                    setErr(err)
+                    return nil
+                }
+                _, _, err = image.Decode(bytes.NewReader(data))
+                if err != nil {
+                    setErr(err)
+                    return nil
+                }
+                pic.SetFile(data)
+                img, err := pic.Src()
+                if err != nil {
+                    setErr(err)
+                    return nil
+                }
+                setImage("img-src", img)
+                update()
+                return nil
+            })
+            r.Call("addEventListener", "load", cb)
+            r.Call("readAsDataURL", files.Index(0))
+            return nil
+        }))
 
-	select {}
+    // Initial update to render the default state
+    update()
+    select {}
 }
+
