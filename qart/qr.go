@@ -555,33 +555,59 @@ type BitBlock struct {
 }
 
 func newBlock(nd, nc int, rs *gf256.RSEncoder, dat, cdata []byte) *BitBlock {
-	b := &BitBlock{
-		DataBytes:  nd,
-		CheckBytes: nc,
-		B:          make([]byte, nd+nc),
-		Tmp:        make([]byte, nc),
-		RS:         rs,
-		bdata:      dat,
-		cdata:      cdata,
-	}
-	copy(b.B, dat)
-	rs.ECC(b.B[:nd], b.B[nd:])
-	b.check()
-	if !bytes.Equal(b.Tmp, cdata) {
-		panic("cdata")
-	}
+    // Validate inputs
+    if len(dat) != nd || len(cdata) != nc {
+        panic(fmt.Sprintf(
+            "newBlock: dimension mismatch. nd=%d, nc=%d, len(dat)=%d, len(cdata)=%d",
+            nd, nc, len(dat), len(cdata),
+        ))
+    }
 
-	b.M = make([][]byte, nd*8)
-	for i := range b.M {
-		row := make([]byte, nd+nc)
-		b.M[i] = row
-		for j := range row {
-			row[j] = 0
-		}
-		row[i/8] = 1 << (7 - uint(i%8))
-		rs.ECC(row[:nd], row[nd:])
-	}
-	return b
+    fmt.Printf("newBlock: Starting with nd=%d, nc=%d, len(dat)=%d, len(cdata)=%d\n", nd, nc, len(dat), len(cdata))
+    fmt.Printf("newBlock: dat=%v\n", dat)
+    fmt.Printf("newBlock: cdata=%v\n", cdata)
+
+    // Initialize BitBlock
+    b := &BitBlock{
+        DataBytes:  nd,
+        CheckBytes: nc,
+        B:          make([]byte, nd+nc),
+        Tmp:        make([]byte, nc),
+        RS:         rs,
+        bdata:      dat,
+        cdata:      cdata,
+    }
+
+    // Copy data bytes and generate ECC
+    copy(b.B, dat)
+    fmt.Printf("newBlock: Generating ECC for data: %v\n", b.B[:nd])
+    rs.ECC(b.B[:nd], b.B[nd:])
+    fmt.Printf("newBlock: ECC output: %v\n", b.B[nd:])
+
+    // Perform a consistency check on ECC
+    b.check()
+    fmt.Printf("b.Tmp length=%d, cdata length=%d\n", len(b.Tmp), len(cdata))
+    if !bytes.Equal(b.Tmp[:len(cdata)], cdata) {
+        fmt.Printf("newBlock: Validation failed with trimmed b.Tmp!\n")
+        fmt.Printf("b.Tmp=%v\n", b.Tmp[:len(cdata)])
+        fmt.Printf("cdata=%v\n", cdata)
+        panic("cdata mismatch")
+    }
+
+    // Create bit matrix for data encoding
+    b.M = make([][]byte, nd*8)
+    for i := range b.M {
+        row := make([]byte, nd+nc)
+        b.M[i] = row
+        for j := range row {
+            row[j] = 0
+        }
+        row[i/8] = 1 << (7 - uint(i%8))
+        rs.ECC(row[:nd], row[nd:]) // Compute ECC for each row
+    }
+
+    fmt.Println("newBlock: Successfully created BitBlock.")
+    return b
 }
 
 func (b *BitBlock) check() {
@@ -673,52 +699,79 @@ func (b *BitBlock) copyOut() {
 }
 
 func decode(data []byte, max int) (*image.RGBA, error) {
-	i, _, err := image.Decode(bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
-	b := i.Bounds()
-	dx, dy := max, max
-	if b.Dx() > b.Dy() {
-		dy = b.Dy() * dx / b.Dx()
-	} else {
-		dx = b.Dx() * dy / b.Dy()
-	}
-	var irgba *image.RGBA
-	switch i := i.(type) {
-	default:
-		irgba = resize.Resample(i, i.Bounds(), dx, dy)
-	case *image.RGBA:
-		irgba = resize.ResizeRGBA(i, i.Bounds(), dx, dy)
-	case *image.NRGBA:
-		irgba = resize.ResizeNRGBA(i, i.Bounds(), dx, dy)
-	}
-	return irgba, nil
+    i, _, err := image.Decode(bytes.NewBuffer(data))
+    if err != nil {
+        return nil, err
+    }
+    b := i.Bounds()
+
+    // Original image dimensions
+    origDx := b.Dx()
+    origDy := b.Dy()
+
+    // Proportional scaling to fit within max, maintaining aspect ratio
+    scale := float64(max) / float64(origDx)
+    if origDy > origDx {
+        scale = float64(max) / float64(origDy)
+    }
+    dx := int(float64(origDx) * scale)
+    dy := int(float64(origDy) * scale)
+
+    // Log scaled dimensions
+    fmt.Printf("Scaled dimensions: dx=%d, dy=%d (max=%d)\n", dx, dy, max)
+
+    // Create a new image with padding to match exact grid size
+    irgba := image.NewRGBA(image.Rect(0, 0, max, max))
+
+    // Select the appropriate resizing function
+    var resized *image.RGBA
+    switch img := i.(type) {
+    case *image.RGBA:
+        resized = resize.ResizeRGBA(img, b, dx, dy)
+    case *image.NRGBA:
+        resized = resize.ResizeNRGBA(img, b, dx, dy)
+    default:
+        resized = resize.Resample(i, b, dx, dy)
+    }
+
+    // Center the resized image in the new grid
+    offsetX := (max - dx) / 2
+    offsetY := (max - dy) / 2
+    draw.Draw(irgba, image.Rect(offsetX, offsetY, offsetX+dx, offsetY+dy), resized, image.Point{}, draw.Src)
+
+    return irgba, nil
 }
 
 func makeTarg(data []byte, max int) ([][]int, error) {
-	i, err := decode(data, max)
-	if err != nil {
-		return nil, err
-	}
-	b := i.Bounds()
-	dx, dy := b.Dx(), b.Dy()
-	targ := make([][]int, dy)
-	arr := make([]int, dx*dy)
-	for y := 0; y < dy; y++ {
-		targ[y], arr = arr[:dx], arr[dx:]
-		row := targ[y]
-		for x := 0; x < dx; x++ {
-			p := i.Pix[y*i.Stride+4*x:]
-			r, g, b, a := p[0], p[1], p[2], p[3]
-			if a == 0 {
-				row[x] = -1
-			} else {
-				row[x] = int((299*uint32(r) + 587*uint32(g) + 114*uint32(b) + 500) / 1000)
-			}
-		}
-	}
-	return targ, nil
+    i, err := decode(data, max)
+    if err != nil {
+        return nil, err
+    }
+    b := i.Bounds()
+    dx, dy := b.Dx(), b.Dy()
+
+    fmt.Printf("Target grid dimensions: dx=%d, dy=%d\n", dx, dy)
+
+    if dx != max || dy != max {
+        fmt.Printf("Mismatch: Expected max=%d, but got dx=%d and dy=%d\n", max, dx, dy)
+    }
+
+    targ := make([][]int, dy)
+    arr := make([]int, dx*dy)
+    for y := 0; y < dy; y++ {
+        targ[y], arr = arr[:dx], arr[dx:]
+        row := targ[y]
+        for x := 0; x < dx; x++ {
+            p := i.Pix[y*i.Stride+4*x:]
+            r, g, b, a := p[0], p[1], p[2], p[3]
+            if a == 0 {
+                row[x] = -1
+            } else {
+                row[x] = int((299*uint32(r) + 587*uint32(g) + 114*uint32(b) + 500) / 1000)
+            }
+        }
+    }
+    return targ, nil
 }
 
 func pngEncode(c image.Image) []byte {
