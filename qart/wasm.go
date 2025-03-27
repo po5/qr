@@ -54,7 +54,7 @@ func ibigger()  { pic.Size++ }
 func ismaller() { pic.Size-- }
 func rotate()   { pic.Rotation = (pic.Rotation + 1) & 3 }
 func bigger() {
-	if pic.Version < 8 {
+	if pic.Version < 40 {
 		pic.Version++
 	}
 }

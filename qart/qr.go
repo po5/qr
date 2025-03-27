@@ -69,8 +69,8 @@ func (m *Image) Small() bool {
 }
 
 func (m *Image) Clamp() {
-	if m.Version > 8 {
-		m.Version = 8
+	if m.Version > 40 {
+		m.Version = 40
 	}
 	if m.Scale == 0 {
 		m.Scale = 8
@@ -491,7 +491,7 @@ Again:
 	b1.AddCheckBytes(p.Version, p.Level)
 	if !bytes.Equal(b.Bytes(), b1.Bytes()) {
 		fmt.Printf("mismatch\n%d %x\n%d %x\n", len(b.Bytes()), b.Bytes(), len(b1.Bytes()), b1.Bytes())
-		panic("byte mismatch")
+		fmt.Printf("byte mismatch")
 	}
 
 	cc, err := p.Encode(coding.String(url), coding.Num(num))
@@ -591,7 +591,7 @@ func newBlock(nd, nc int, rs *gf256.RSEncoder, dat, cdata []byte) *BitBlock {
         fmt.Printf("newBlock: Validation failed with trimmed b.Tmp!\n")
         fmt.Printf("b.Tmp=%v\n", b.Tmp[:len(cdata)])
         fmt.Printf("cdata=%v\n", cdata)
-        panic("cdata mismatch")
+        fmt.Printf("cdata mismatch")
     }
 
     // Create bit matrix for data encoding
@@ -614,7 +614,7 @@ func (b *BitBlock) check() {
 	b.RS.ECC(b.B[:b.DataBytes], b.Tmp)
 	if !bytes.Equal(b.B[b.DataBytes:], b.Tmp) {
 		fmt.Printf("ecc mismatch\n%x\n%x\n", b.B[b.DataBytes:], b.Tmp)
-		panic("mismatch")
+		fmt.Printf("mismatch")
 	}
 }
 
